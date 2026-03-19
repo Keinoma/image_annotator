@@ -1,14 +1,31 @@
 import streamlit as st
-import pandas as pd
+import gspread
+from google.oauth2.service_account import Credentials
 from pathlib import Path
 from PIL import Image
+import pandas as pd
 
 # --- Config ---
 IMAGES_DIR = Path("images")
-RESPONSES_FILE = Path("responses.csv")
+NOM_FEUILLE = "image_annotator"  # à créer dans Google Sheets
+SCOPES = ["https://www.googleapis.com/auth/spreadsheets",
+          "https://www.googleapis.com/auth/drive"]
+
+# --- Connexion à Google Sheets ---
+def connecter():
+    creds = Credentials.from_service_account_info(
+        st.secrets["gcp_service_account"],
+        scopes=SCOPES
+    )
+    client = gspread.authorize(creds)
+    return client.open(NOM_FEUILLE).sheet1
+
+# --- Sauvegarde d'une réponse ---
+def sauvegarder(sheet, username, image_name, reponse):
+    sheet.append_row([username, image_name, reponse, pd.Timestamp.now().isoformat()])
 
 # --- Chargement des images ---
-image_files = sorted(IMAGES_DIR.glob("*.[jp][pn]g"))  # .jpg et .png
+image_files = sorted(IMAGES_DIR.glob("*.[jp][pn]g"))
 
 if not image_files:
     st.error("Aucune image trouvée dans le dossier `images/`.")
@@ -32,12 +49,12 @@ if not st.session_state.username:
             st.warning("Merci d'entrer un nom d'utilisateur.")
     st.stop()
 
+# --- Connexion Sheet ---
+sheet = connecter()
+
 # --- Fin du quiz ---
 if st.session_state.index >= len(image_files):
     st.success("✅ Toutes les images ont été annotées !")
-    if RESPONSES_FILE.exists():
-        df = pd.read_csv(RESPONSES_FILE)
-        st.dataframe(df)
     st.stop()
 
 # --- Affichage ---
@@ -46,7 +63,6 @@ current_image = image_files[st.session_state.index]
 st.title("🖼️ Annotation d'images")
 st.progress(st.session_state.index / len(image_files))
 st.caption(f"Image {st.session_state.index + 1} / {len(image_files)}")
-
 st.image(Image.open(current_image), width=400)
 
 # --- Formulaire ---
@@ -58,17 +74,6 @@ if submitted:
     if not response.strip():
         st.warning("Merci d'entrer une réponse avant de continuer.")
     else:
-        # Sauvegarde dans le CSV
-        new_row = pd.DataFrame([{
-            "username": st.session_state.username,
-            "image": current_image.name,
-            "reponse": response.strip(),
-            "timestamp": pd.Timestamp.now().isoformat()
-        }])
-        if RESPONSES_FILE.exists():
-            new_row.to_csv(RESPONSES_FILE, mode="a", header=False, index=False)
-        else:
-            new_row.to_csv(RESPONSES_FILE, index=False)
-
+        sauvegarder(sheet, st.session_state.username, current_image.name, response.strip())
         st.session_state.index += 1
         st.rerun()
