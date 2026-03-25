@@ -1,5 +1,6 @@
 streamlit
-gspread==6.1.4
-google-auth==2.40.1
+gspread
+google-auth
+google-auth-oauthlib
 pillow
 pandas
